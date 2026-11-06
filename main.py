@@ -163,9 +163,26 @@ CREATE TABLE order_details (
 	FOREIGN KEY (order_id) REFERENCES orders(id),
 	FOREIGN KEY (product_id) REFERENCES products(id)
 );
+
+-- Copied from `sakila-db/sakila-data.sql`
+SET NAMES utf8mb4;
+SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;
+SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
+SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='TRADITIONAL';
+SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, AUTOCOMMIT=0;
 '''
 
-# A partir de aquí, el código restante fué generado por una IAG:
+script_footer = '''
+-- Copied from `sakila-db/sakila-data.sql`
+SET SQL_MODE=@OLD_SQL_MODE;
+SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
+SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;
+SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
+'''
+
+# NOTA: A partir de aquí, el código restante fué generado por una IAG (con algo de modificaciones):
+#       Las modificaciones que hice son para acelerar el tiempo de ejecución del script, con AUTOCOMMIT=0 al inicio
+#       y COMMIT luego de cada insert y además agrupando las miles de sentencias insert en una sola sentencia insert por cada tabla.
 
 def sql(value):
     if value is None:
@@ -183,98 +200,106 @@ customer_ids = set(row.ids["Customer ID"] for row in cleaned_unnormalized)
 product_ids = set(row.ids["Product ID"] for row in cleaned_unnormalized)
 order_ids = set(row.ids["Order ID"] for row in cleaned_unnormalized)
 
-print("Generando sentencias de la tabla `customers`")
-for customer_id in customer_ids:
-    customer = most_common_values["Customer ID"][customer_id]
 
-    statements.append(
-        "INSERT INTO customers (id, name, segment) VALUES "
-        f"({sql(customer_id)}, {sql(customer['Customer Name'])}, "
-        f"{sql(customer['Segment'])});"
-    )
+print("Generando sentencias de la tabla `customers`")
+if len(customer_ids) > 0:
+    statement_parts = ["INSERT INTO customers (id, name, segment) VALUES"]
+    i = 0
+    for customer_id in customer_ids:
+        customer = most_common_values["Customer ID"][customer_id]
+        statement_parts.append(f"\t({sql(customer_id)}, {sql(customer['Customer Name'])}, {sql(customer['Segment'])}){';' if i >= len(customer_ids)-1 else ','}")
+        i += 1
+    statements.extend(statement_parts)
+    statements.append("COMMIT;\n")
 
 
 print("Generando sentencias de la tabla `products`")
-for product_id in product_ids:
-    product = most_common_values["Product ID"][product_id]
-
-    statements.append(
-        "INSERT INTO products (id, name, category, subcategory) VALUES "
-        f"({sql(product_id)}, {sql(product['Product Name'])}, "
-        f"{sql(product['Category'])}, {sql(product['Sub-Category'])});"
-    )
+if len(product_ids) > 0:
+    statement_parts = ["INSERT INTO products (id, name, category, subcategory) VALUES"]
+    i = 0
+    for product_id in product_ids:
+        product = most_common_values["Product ID"][product_id]
+        statement_parts.append(f"\t({sql(product_id)}, {sql(product['Product Name'])}, {sql(product['Category'])}, {sql(product['Sub-Category'])}){';' if i >= len(product_ids)-1 else ','}")
+        i += 1
+    statements.extend(statement_parts)
+    statements.append("COMMIT;\n")
 
 
 print("Generando sentencias de la tabla `locations`")
-location_keys = {}
-for order_id in order_ids:
-    order = most_common_values["Order ID"][order_id]
+if len(order_ids) > 0:
+    location_keys = {}
+    for order_id in order_ids:
+        order = most_common_values["Order ID"][order_id]
 
-    location = (
-        order["City"],
-        order["State"],
-        order["Country"],
-        order["Region"],
-        order["Market2"]
-    )
+        location = (
+            order["City"],
+            order["State"],
+            order["Country"],
+            order["Region"],
+            order["Market2"]
+        )
 
-    if location not in location_keys:
-        location_keys[location] = len(location_keys) + 1
+        if location not in location_keys:
+            location_keys[location] = len(location_keys) + 1
 
-for location, location_id in location_keys.items():
-    city, state, country, region, market = location
-
-    statements.append(
-        "INSERT INTO locations (id, city, state, country, region, market) VALUES "
-        f"({location_id}, {sql(city)}, {sql(state)}, {sql(country)}, "
-        f"{sql(region)}, {sql(market)});"
-    )
+    if len(location_keys) > 0:
+        statement_parts = ["INSERT INTO locations (id, city, state, country, region, market) VALUES"]
+        i = 0
+        for location, location_id in location_keys.items():
+            city, state, country, region, market = location
+            statement_parts.append(f"\t({location_id}, {sql(city)}, {sql(state)}, {sql(country)}, {sql(region)}, {sql(market)}){';' if i >= len(location_keys)-1 else ','}")
+            i += 1
+        statements.extend(statement_parts)
+        statements.append("COMMIT;\n")
 
 
 print("Generando sentencias de la tabla `orders`")
-for order_id in order_ids:
-    order = most_common_values["Order ID"][order_id]
+if len(order_ids) > 0:
+    statement_parts = ["INSERT INTO orders (id, priority, ship_mode, year, weeknum, customer_id, location_id) VALUES"]
+    i = 0
+    for order_id in order_ids:
+        order = most_common_values["Order ID"][order_id]
 
-    location = (
-        order["City"],
-        order["State"],
-        order["Country"],
-        order["Region"],
-        order["Market2"]
-    )
+        location = (
+            order["City"],
+            order["State"],
+            order["Country"],
+            order["Region"],
+            order["Market2"]
+        )
 
-    row = list(filter(lambda row: row.ids['Order ID'] == order_id, cleaned_unnormalized))[0]
-    customer_id = row.ids['Customer ID']
+        row = list(filter(lambda row: row.ids['Order ID'] == order_id, cleaned_unnormalized))[0]
+        customer_id = row.ids['Customer ID']
 
-    statements.append(
-        "INSERT INTO orders "
-        "(id, priority, ship_mode, year, weeknum, customer_id, location_id) "
-        "VALUES "
-        f"({sql(order_id)}, {sql(order['Order Priority'])}, "
-        f"{sql(order['Ship Mode'])}, {sql(order['Year'])}, "
-        f"{sql(order['weeknum'])}, {sql(customer_id)}, "
-        f"{location_keys[location]});"
-    )
+        statement_parts.append(
+            f"\t({sql(order_id)}, {sql(order['Order Priority'])}, {sql(order['Ship Mode'])}, {sql(order['Year'])}, {sql(order['weeknum'])}, {sql(customer_id)}, {location_keys[location]})"
+            f"{';' if i >= len(order_ids)-1 else ','}"
+        )
+        i += 1
+    statements.extend(statement_parts)
+    statements.append("COMMIT;\n")
 
 
 print("Generando sentencias de la tabla `order_details`")
-for row in cleaned_unnormalized:
-    fields = row.fields
+if len(cleaned_unnormalized) > 0:
+    statement_parts = ["INSERT INTO order_details (order_id, product_id, discount, profit, quantity, sales, shipping_cost) VALUES"]
+    i = 0
+    for row in cleaned_unnormalized:
+        fields = row.fields
+        statement_parts.append(
+            f"\t({sql(row.ids['Order ID'])}, {sql(row.ids['Product ID'])}, {sql(fields['Discount'])}, {sql(fields['Profit'])}, {sql(fields['Quantity'])}, {sql(fields['Sales'])}, {sql(fields['Shipping Cost'])})"
+            f"{';' if i >= len(cleaned_unnormalized)-1 else ','}"
+        )
+        i += 1
+    statements.extend(statement_parts)
+    statements.append("COMMIT;\n")
 
-    statements.append(
-        "INSERT INTO order_details "
-        "(order_id, product_id, discount, profit, quantity, sales, shipping_cost) "
-        "VALUES "
-        f"({sql(row.ids['Order ID'])}, {sql(row.ids['Product ID'])}, "
-        f"{sql(fields['Discount'])}, {sql(fields['Profit'])}, "
-        f"{sql(fields['Quantity'])}, {sql(fields['Sales'])}, "
-        f"{sql(fields['Shipping Cost'])});"
-    )
 
 print("Escribiendo las sentencias en el archivo")
 with open("global_superstore.sql", 'w', encoding="utf-8") as file:
     file.write(script_header)
     file.write('\n')
     file.write('\n'.join(statements))
+    file.write(script_footer)
 
 print("\nListo, terminado")
