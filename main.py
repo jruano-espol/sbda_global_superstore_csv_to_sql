@@ -207,10 +207,9 @@ if len(customer_ids) > 0:
     i = 0
     for customer_id in customer_ids:
         customer = most_common_values["Customer ID"][customer_id]
-        statement_parts.append(f"\t({sql(customer_id)}, {sql(customer['Customer Name'])}, {sql(customer['Segment'])}){';' if i >= len(customer_ids)-1 else ','}")
+        statement_parts.append(f"\t({sql(customer_id)}, {sql(customer['Customer Name'])}, {sql(customer['Segment'])}){';\n' if i >= len(customer_ids)-1 else ','}")
         i += 1
     statements.extend(statement_parts)
-    statements.append("COMMIT;\n")
 
 
 print("Generando sentencias de la tabla `products`")
@@ -219,10 +218,9 @@ if len(product_ids) > 0:
     i = 0
     for product_id in product_ids:
         product = most_common_values["Product ID"][product_id]
-        statement_parts.append(f"\t({sql(product_id)}, {sql(product['Product Name'])}, {sql(product['Category'])}, {sql(product['Sub-Category'])}){';' if i >= len(product_ids)-1 else ','}")
+        statement_parts.append(f"\t({sql(product_id)}, {sql(product['Product Name'])}, {sql(product['Category'])}, {sql(product['Sub-Category'])}){';\n' if i >= len(product_ids)-1 else ','}")
         i += 1
     statements.extend(statement_parts)
-    statements.append("COMMIT;\n")
 
 
 print("Generando sentencias de la tabla `locations`")
@@ -247,10 +245,16 @@ if len(order_ids) > 0:
         i = 0
         for location, location_id in location_keys.items():
             city, state, country, region, market = location
-            statement_parts.append(f"\t({location_id}, {sql(city)}, {sql(state)}, {sql(country)}, {sql(region)}, {sql(market)}){';' if i >= len(location_keys)-1 else ','}")
+            statement_parts.append(f"\t({location_id}, {sql(city)}, {sql(state)}, {sql(country)}, {sql(region)}, {sql(market)}){';\n' if i >= len(location_keys)-1 else ','}")
             i += 1
         statements.extend(statement_parts)
-        statements.append("COMMIT;\n")
+
+
+# Mapeo creado para buscar la fila de cada orden instantáneamente y no usar filter()
+order_to_row = {}
+for row in cleaned_unnormalized:
+    if row.ids['Order ID'] not in order_to_row:
+        order_to_row[row.ids['Order ID']] = row
 
 
 print("Generando sentencias de la tabla `orders`")
@@ -268,16 +272,15 @@ if len(order_ids) > 0:
             order["Market2"]
         )
 
-        row = list(filter(lambda row: row.ids['Order ID'] == order_id, cleaned_unnormalized))[0]
+        row = order_to_row[order_id]
         customer_id = row.ids['Customer ID']
 
         statement_parts.append(
             f"\t({sql(order_id)}, {sql(order['Order Priority'])}, {sql(order['Ship Mode'])}, {sql(order['Year'])}, {sql(order['weeknum'])}, {sql(customer_id)}, {location_keys[location]})"
-            f"{';' if i >= len(order_ids)-1 else ','}"
+            f"{';\n' if i >= len(order_ids)-1 else ','}"
         )
         i += 1
     statements.extend(statement_parts)
-    statements.append("COMMIT;\n")
 
 
 print("Generando sentencias de la tabla `order_details`")
@@ -288,11 +291,10 @@ if len(cleaned_unnormalized) > 0:
         fields = row.fields
         statement_parts.append(
             f"\t({sql(row.ids['Order ID'])}, {sql(row.ids['Product ID'])}, {sql(fields['Discount'])}, {sql(fields['Profit'])}, {sql(fields['Quantity'])}, {sql(fields['Sales'])}, {sql(fields['Shipping Cost'])})"
-            f"{';' if i >= len(cleaned_unnormalized)-1 else ','}"
+            f"{';\n' if i >= len(cleaned_unnormalized)-1 else ','}"
         )
         i += 1
     statements.extend(statement_parts)
-    statements.append("COMMIT;\n")
 
 
 print("Escribiendo las sentencias en el archivo")
@@ -300,6 +302,7 @@ with open("global_superstore.sql", 'w', encoding="utf-8") as file:
     file.write(script_header)
     file.write('\n')
     file.write('\n'.join(statements))
+    file.write("\nCOMMIT;\n")
     file.write(script_footer)
 
 print("\nListo, terminado")
